@@ -54,30 +54,129 @@ if uploaded_file:
     tab_time = tabs[3] if date_cols else None
     tab_visuals = tabs[4 if date_cols else 3]
 
-    # Time Series Tab with safe handling
+    # Preview
+    with tab_preview:
+        st.subheader("🔍 Dataset Preview")
+        st.dataframe(df.head())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Rows:** {df.shape[0]}")
+        with col2:
+            st.write(f"**Columns:** {df.shape[1]}")
+
+        with st.expander("📈 Show Summary Statistics"):
+            st.write(df.describe(include='all'))
+
+        st.write("**Column Types:**")
+        st.dataframe(df.dtypes.reset_index().rename(columns={0: "Type", "index": "Column"}))
+
+        st.subheader("🔍 Column Insights")
+        selected_col = st.selectbox("Choose a column to analyze:", df.columns)
+        if selected_col:
+            st.write(f"**Null Values:** {df[selected_col].isna().sum()}")
+            st.write(f"**Duplicate Values:** {df[selected_col].duplicated().sum()}")
+            st.write(f"**Unique Values:** {df[selected_col].nunique()}")
+
+    # Transform
+    with tab_transform:
+        st.subheader("🛠️ Data Transformations")
+
+        with st.expander("🔴 Drop Nulls"):
+            drop_cols = st.multiselect("Drop rows with nulls in:", df_copy.columns)
+            if drop_cols:
+                df_copy.dropna(subset=drop_cols, inplace=True)
+
+        with st.expander("🟡 Fill Missing Values"):
+            fill_col = st.selectbox("Column to fill nulls in:", df_copy.columns)
+            fill_method = st.radio("Method", ["Mean", "Median", "Mode", "Custom Value"])
+            custom_val = None
+            if fill_method == "Custom Value":
+                custom_val = st.text_input("Enter custom value:")
+
+            if st.button("Fill Nulls"):
+                try:
+                    if fill_method == "Mean":
+                        df_copy[fill_col].fillna(df_copy[fill_col].mean(), inplace=True)
+                    elif fill_method == "Median":
+                        df_copy[fill_col].fillna(df_copy[fill_col].median(), inplace=True)
+                    elif fill_method == "Mode":
+                        df_copy[fill_col].fillna(df_copy[fill_col].mode()[0], inplace=True)
+                    elif fill_method == "Custom Value":
+                        df_copy[fill_col].fillna(custom_val, inplace=True)
+                    st.success("Nulls filled")
+                except Exception as e:
+                    st.error(e)
+
+        with st.expander("🔤 String Column Operations"):
+            string_cols = df_copy.select_dtypes(include='object').columns.tolist()
+            if string_cols:
+                str_col = st.selectbox("String column:", string_cols)
+                str_op = st.radio("Transformation", ["Lowercase", "Uppercase", "Title Case"])
+                if st.button("Apply String Transformation"):
+                    if str_op == "Lowercase":
+                        df_copy[str_col] = df_copy[str_col].str.lower()
+                    elif str_op == "Uppercase":
+                        df_copy[str_col] = df_copy[str_col].str.upper()
+                    elif str_op == "Title Case":
+                        df_copy[str_col] = df_copy[str_col].str.title()
+                    st.success(f"{str_op} applied")
+
+        with st.expander("✏️ Rename Columns"):
+            old_col = st.selectbox("Column to rename", df_copy.columns)
+            new_col = st.text_input("New column name:")
+            if st.button("Rename Column") and new_col:
+                df_copy.rename(columns={old_col: new_col}, inplace=True)
+                st.success(f"Renamed to {new_col}")
+
+        with st.expander("📐 Numeric Transformations"):
+            numeric_cols = df_copy.select_dtypes(include=['number']).columns.tolist()
+            if numeric_cols:
+                trans_col = st.selectbox("Column to transform", numeric_cols)
+                method = st.radio("Method", ["Standardization (Z-score)", "Normalization (Min-Max)"])
+                if st.button("Apply Numeric Transformation"):
+                    if method == "Standardization (Z-score)":
+                        df_copy[trans_col + "_zscore"] = (df_copy[trans_col] - df_copy[trans_col].mean()) / df_copy[trans_col].std()
+                    else:
+                        df_copy[trans_col + "_norm"] = (df_copy[trans_col] - df_copy[trans_col].min()) / (df_copy[trans_col].max() - df_copy[trans_col].min())
+                    st.success(f"{method} applied")
+
+        st.subheader("🧾 Modified Data Preview")
+        st.dataframe(df_copy.head())
+
+        csv = df_copy.to_csv(index=False).encode()
+        st.download_button("⬇️ Download Modified CSV", csv, "modified_data.csv", "text/csv")
+
+    # Chart Guide
+    with tab_guide:
+        st.subheader("💡 Chart Recommender")
+        selected_col = st.selectbox("Select column", df.columns)
+        if pd.api.types.is_numeric_dtype(df[selected_col]):
+            st.markdown("✅ Recommended: Histogram, Boxplot")
+        elif pd.api.types.is_datetime64_any_dtype(df[selected_col]):
+            st.markdown("✅ Recommended: Time Series Line Chart")
+        elif df[selected_col].nunique() < 20:
+            st.markdown("✅ Recommended: Bar Chart, Pie Chart")
+        else:
+            st.markdown("❓ Try sampling or custom plots.")
+            st.markdown("✅ Recommended: Violin Plot, KDE Plot")
+
+    # Report Notes Input
+    report_notes = ""
+    with st.expander("📝 Add Overall Report Summary"):
+        report_notes = st.text_area("Write a summary or insights for your visualizations:", height=200)
+
+    # Time Series (restored)
     if tab_time:
         with tab_time:
-            st.subheader("📅 Time Series Analysis")
-
+            st.subheader("🗓️ Time Series Visualization")
             date_col = st.selectbox("Select a date/time column:", date_cols)
             numeric_cols = df.select_dtypes(include='number').columns.tolist()
+            value_col = st.selectbox("Select numeric column to plot:", numeric_cols)
 
-            if numeric_cols:
-                value_col = st.selectbox("Select numeric column to plot:", numeric_cols)
-            else:
-                st.warning("⚠️ No numeric columns available for plotting.")
-                value_col = None
-
-            try:
-                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-                df_sorted = df[[date_col, value_col]].dropna().sort_values(by=date_col)
-
-                if value_col:
-                    st.line_chart(df_sorted.set_index(date_col)[value_col])
-            except KeyError as e:
-                st.error(f"Column not found: {e}")
-            except Exception as e:
-                st.error(f"Could not generate time series chart: {e}")
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+            df_sorted = df.sort_values(by=date_col)
+            st.line_chart(df_sorted.set_index(date_col)[value_col])
 
     # Visuals tab retained (enhanced with dropdown chart selector)
     with tab_visuals:
