@@ -45,6 +45,7 @@ if uploaded_file:
     if date_cols:
         tab_names.append("📅 Time Series")
     tab_names.append("📊 Visuals")
+    tab_names.append("📤 Export PDF")
 
     tabs = st.tabs(tab_names)
 
@@ -53,132 +54,37 @@ if uploaded_file:
     tab_guide = tabs[2]
     tab_time = tabs[3] if date_cols else None
     tab_visuals = tabs[4 if date_cols else 3]
+    tab_pdf = tabs[5 if date_cols else 4]
 
-    # Preview
-    with tab_preview:
-        st.subheader("🔍 Dataset Preview")
-        st.dataframe(df.head())
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Rows:** {df.shape[0]}")
-        with col2:
-            st.write(f"**Columns:** {df.shape[1]}")
-
-        with st.expander("📈 Show Summary Statistics"):
-            st.write(df.describe(include='all'))
-
-        st.write("**Column Types:**")
-        st.dataframe(df.dtypes.reset_index().rename(columns={0: "Type", "index": "Column"}))
-
-        st.subheader("🔍 Column Insights")
-        selected_col = st.selectbox("Choose a column to analyze:", df.columns)
-        if selected_col:
-            st.write(f"**Null Values:** {df[selected_col].isna().sum()}")
-            st.write(f"**Duplicate Values:** {df[selected_col].duplicated().sum()}")
-            st.write(f"**Unique Values:** {df[selected_col].nunique()}")
-
-    # Transform
-    with tab_transform:
-        st.subheader("🛠️ Data Transformations")
-
-        with st.expander("🔴 Drop Nulls"):
-            drop_cols = st.multiselect("Drop rows with nulls in:", df_copy.columns)
-            if drop_cols:
-                df_copy.dropna(subset=drop_cols, inplace=True)
-
-        with st.expander("🟡 Fill Missing Values"):
-            fill_col = st.selectbox("Column to fill nulls in:", df_copy.columns)
-            fill_method = st.radio("Method", ["Mean", "Median", "Mode", "Custom Value"])
-            custom_val = None
-            if fill_method == "Custom Value":
-                custom_val = st.text_input("Enter custom value:")
-
-            if st.button("Fill Nulls"):
-                try:
-                    if fill_method == "Mean":
-                        df_copy[fill_col].fillna(df_copy[fill_col].mean(), inplace=True)
-                    elif fill_method == "Median":
-                        df_copy[fill_col].fillna(df_copy[fill_col].median(), inplace=True)
-                    elif fill_method == "Mode":
-                        df_copy[fill_col].fillna(df_copy[fill_col].mode()[0], inplace=True)
-                    elif fill_method == "Custom Value":
-                        df_copy[fill_col].fillna(custom_val, inplace=True)
-                    st.success("Nulls filled")
-                except Exception as e:
-                    st.error(e)
-
-        with st.expander("🔤 String Column Operations"):
-            string_cols = df_copy.select_dtypes(include='object').columns.tolist()
-            if string_cols:
-                str_col = st.selectbox("String column:", string_cols)
-                str_op = st.radio("Transformation", ["Lowercase", "Uppercase", "Title Case"])
-                if st.button("Apply String Transformation"):
-                    if str_op == "Lowercase":
-                        df_copy[str_col] = df_copy[str_col].str.lower()
-                    elif str_op == "Uppercase":
-                        df_copy[str_col] = df_copy[str_col].str.upper()
-                    elif str_op == "Title Case":
-                        df_copy[str_col] = df_copy[str_col].str.title()
-                    st.success(f"{str_op} applied")
-
-        with st.expander("✏️ Rename Columns"):
-            old_col = st.selectbox("Column to rename", df_copy.columns)
-            new_col = st.text_input("New column name:")
-            if st.button("Rename Column") and new_col:
-                df_copy.rename(columns={old_col: new_col}, inplace=True)
-                st.success(f"Renamed to {new_col}")
-
-        with st.expander("📐 Numeric Transformations"):
-            numeric_cols = df_copy.select_dtypes(include=['number']).columns.tolist()
-            if numeric_cols:
-                trans_col = st.selectbox("Column to transform", numeric_cols)
-                method = st.radio("Method", ["Standardization (Z-score)", "Normalization (Min-Max)"])
-                if st.button("Apply Numeric Transformation"):
-                    if method == "Standardization (Z-score)":
-                        df_copy[trans_col + "_zscore"] = (df_copy[trans_col] - df_copy[trans_col].mean()) / df_copy[trans_col].std()
-                    else:
-                        df_copy[trans_col + "_norm"] = (df_copy[trans_col] - df_copy[trans_col].min()) / (df_copy[trans_col].max() - df_copy[trans_col].min())
-                    st.success(f"{method} applied")
-
-        st.subheader("🧾 Modified Data Preview")
-        st.dataframe(df_copy.head())
-
-        csv = df_copy.to_csv(index=False).encode()
-        st.download_button("⬇️ Download Modified CSV", csv, "modified_data.csv", "text/csv")
-
-    # Chart Guide
-    with tab_guide:
-        st.subheader("💡 Chart Recommender")
-        selected_col = st.selectbox("Select column", df.columns)
-        if pd.api.types.is_numeric_dtype(df[selected_col]):
-            st.markdown("✅ Recommended: Histogram, Boxplot")
-        elif pd.api.types.is_datetime64_any_dtype(df[selected_col]):
-            st.markdown("✅ Recommended: Time Series Line Chart")
-        elif df[selected_col].nunique() < 20:
-            st.markdown("✅ Recommended: Bar Chart, Pie Chart")
-        else:
-            st.markdown("❓ Try sampling or custom plots.")
-            st.markdown("✅ Recommended: Violin Plot, KDE Plot")
-
-    # Report Notes Input
-    report_notes = ""
-    with st.expander("📝 Add Overall Report Summary"):
-        report_notes = st.text_area("Write a summary or insights for your visualizations:", height=200)
-
-    # Time Series (restored)
+    # Time Series Tab with safe handling
     if tab_time:
         with tab_time:
-            st.subheader("🗓️ Time Series Visualization")
+            st.subheader("📅 Time Series Analysis")
+
             date_col = st.selectbox("Select a date/time column:", date_cols)
             numeric_cols = df.select_dtypes(include='number').columns.tolist()
-            value_col = st.selectbox("Select numeric column to plot:", numeric_cols)
 
-            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-            df_sorted = df.sort_values(by=date_col)
-            st.line_chart(df_sorted.set_index(date_col)[value_col])
+            if numeric_cols:
+                value_col = st.selectbox("Select numeric column to plot:", numeric_cols)
+            else:
+                st.warning("⚠️ No numeric columns available for plotting.")
+                value_col = None
+
+            try:
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+                if value_col:
+                    df_sorted = df[[date_col, value_col]].dropna().sort_values(by=date_col)
+                    if not df_sorted.empty:
+                        st.line_chart(df_sorted.set_index(date_col)[value_col])
+                    else:
+                        st.warning("No valid data to plot after cleaning.")
+            except KeyError as e:
+                st.error(f"Column not found: {e}")
+            except Exception as e:
+                st.error(f"Could not generate time series chart: {e}")
 
     # Visuals tab retained (enhanced with dropdown chart selector)
+    chart_buffers = []
     with tab_visuals:
         st.subheader("📊 Interactive Chart Builder")
 
@@ -194,53 +100,47 @@ if uploaded_file:
                 fig, ax = plt.subplots(figsize=(10, 6))
                 if chart_type == "Histogram":
                     sns.histplot(df[selected_cols[0]].dropna(), kde=True, ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Pie Chart":
                     df[selected_cols[0]].value_counts().plot(kind="pie", autopct="%1.1f%%", ax=ax)
                     ax.set_ylabel("")
-                    st.pyplot(fig)
                 elif chart_type == "Bar Chart":
                     df[selected_cols[0]].value_counts().plot(kind="bar", ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Line Chart" and len(selected_cols) >= 2:
                     df.plot(x=selected_cols[0], y=selected_cols[1], ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Boxplot" and len(selected_cols) >= 2:
                     sns.boxplot(x=df[selected_cols[0]], y=df[selected_cols[1]], ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Scatter Plot" and len(selected_cols) >= 2:
                     sns.scatterplot(x=df[selected_cols[0]], y=df[selected_cols[1]], ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Violin Plot" and len(selected_cols) >= 2:
                     sns.violinplot(x=df[selected_cols[0]], y=df[selected_cols[1]], ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "KDE Plot" and len(selected_cols) >= 2:
                     sns.kdeplot(x=df[selected_cols[0]], y=df[selected_cols[1]], fill=True, ax=ax)
-                    st.pyplot(fig)
                 elif chart_type == "Heatmap":
                     numeric_df = df[selected_cols].select_dtypes(include='number')
                     if not numeric_df.empty:
                         sns.heatmap(numeric_df.corr(), annot=True, cmap="coolwarm", ax=ax)
-                        st.pyplot(fig)
                 elif chart_type == "Pairplot":
                     numeric_df = df[selected_cols].select_dtypes(include='number')
                     if not numeric_df.empty:
                         pairplot_fig = sns.pairplot(numeric_df)
+                        chart_buffers.append(pairplot_fig.figure)
                         st.pyplot(pairplot_fig.figure)
+                        return
                 elif chart_type == "Treemap":
                     num_data = df[selected_cols[0]].fillna(0).values if selected_cols else []
                     labels = df.index.astype(str).tolist()
                     fig = plt.figure(figsize=(10, 6))
                     squarify.plot(sizes=num_data, label=labels, alpha=.8)
-                    st.pyplot(fig)
                 elif chart_type == "Area Chart":
                     numeric_df = df[selected_cols].select_dtypes(include='number')
                     if not numeric_df.empty:
                         st.area_chart(numeric_df)
+                        return
                 elif chart_type == "Correlation Matrix":
                     numeric_df = df[selected_cols].select_dtypes(include='number')
                     if not numeric_df.empty:
                         st.dataframe(numeric_df.corr())
+                        return
                 elif chart_type == "Donut Chart":
                     cat_col = selected_cols[0]
                     if df[cat_col].dtype == 'object':
@@ -249,7 +149,6 @@ if uploaded_file:
                         fig, ax = plt.subplots()
                         ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4))
                         ax.axis('equal')
-                        st.pyplot(fig)
                 elif chart_type == "Hexbin Plot":
                     numeric_cols = df[selected_cols].select_dtypes(include='number').columns.tolist()
                     if len(numeric_cols) >= 2:
@@ -257,11 +156,37 @@ if uploaded_file:
                         ax.hexbin(df[numeric_cols[0]], df[numeric_cols[1]], gridsize=30, cmap='Blues')
                         ax.set_xlabel(numeric_cols[0])
                         ax.set_ylabel(numeric_cols[1])
-                        st.pyplot(fig)
-                    else:
-                        st.warning("Select at least 2 numeric columns for hexbin plot.")
+                st.pyplot(fig)
+                chart_buffers.append(fig)
             except Exception as e:
                 st.error(f"Chart creation error: {e}")
 
+    # Export PDF Tab
+    with tab_pdf:
+        st.subheader("📤 Export Visualizations to PDF")
+
+        if chart_buffers:
+            if st.button("📥 Download PDF Report"):
+                pdf = FPDF()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                for fig in chart_buffers:
+                    img_buffer = io.BytesIO()
+                    fig.savefig(img_buffer, format='png')
+                    img_buffer.seek(0)
+
+                    img_path = os.path.join("temp_chart.png")
+                    with open(img_path, "wb") as f:
+                        f.write(img_buffer.getbuffer())
+
+                    pdf.add_page()
+                    pdf.image(img_path, x=10, y=30, w=180)
+
+                pdf_output = io.BytesIO()
+                pdf.output(pdf_output)
+                b64 = base64.b64encode(pdf_output.getvalue()).decode()
+                href = f'<a href="data:application/pdf;base64,{b64}" download="charts_report.pdf">📄 Download PDF</a>'
+                st.markdown(href, unsafe_allow_html=True)
+        else:
+            st.info("📊 No charts available to export. Please generate visualizations first.")
 else:
     st.info("📁 Upload a CSV file to begin.")
